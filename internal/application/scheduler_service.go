@@ -59,7 +59,7 @@ func (s *SchedulerService) Run(ctx context.Context) (ScanResult, error) {
 		if rp == nil {
 			continue
 		}
-		key := "auto-todo-" + p.ID + "-" + p.NextDueDate.Format("2006-01-02")
+		key := domain.MaintenanceTodoKey(p)
 		if _, err := s.ports.Todos.GetByIdempotencyKey(ctx, key); err == nil {
 			continue
 		}
