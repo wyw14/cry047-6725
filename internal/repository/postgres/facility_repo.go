@@ -104,6 +104,18 @@ func (r *FacilityRepository) UpdateStatus(ctx context.Context, id string, status
 }
 
 func (r *FacilityRepository) UpdateStatusChecked(ctx context.Context, id string, status domain.FacilityStatus, version int) error {
+	var current domain.FacilityStatus
+	var criticality domain.Criticality
+	err := r.pool.QueryRow(ctx,
+		`SELECT status, criticality FROM facilities WHERE id=$1 AND version=$2`,
+		id, version).Scan(&current, &criticality)
+	if err != nil {
+		return wrapPgErr(err, "Facility", id)
+	}
+	transition := domain.FacilityStatusTransition{From: current, To: status, Reason: "checked repository update"}
+	if err := transition.ValidateTransition(criticality); err != nil {
+		return err
+	}
 	return r.UpdateStatus(ctx, id, status, version)
 }
 

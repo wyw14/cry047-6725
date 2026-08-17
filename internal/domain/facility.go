@@ -156,8 +156,14 @@ func (t FacilityStatusTransition) ValidateTransition(criticality Criticality) er
 }
 
 // MaintenanceCompletionStatus selects the facility status after a preventive
-// maintenance execution is submitted.
+// maintenance execution while preserving critical overdue restrictions.
 func MaintenanceCompletionStatus(f *Facility) FacilityStatus {
+	if f == nil {
+		return FacilityPendingMaintenance
+	}
+	if f.Criticality == CriticalityCritical && f.Status == FacilityOverdue {
+		return FacilityOverdue
+	}
 	return FacilityNormal
 }
 

@@ -64,7 +64,23 @@ func (r *FacilityRepository) UpdateStatus(ctx context.Context, id string, status
 }
 
 func (r *FacilityRepository) UpdateStatusChecked(ctx context.Context, id string, status domain.FacilityStatus, version int) error {
-	return r.UpdateStatus(ctx, id, status, version)
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	existing, ok := r.store.facilities[id]
+	if !ok {
+		return domain.ErrNotFound("Facility", id)
+	}
+	if existing.Version != version {
+		return domain.ErrConflict("版本冲突: 设施 "+id, nil)
+	}
+	transition := domain.FacilityStatusTransition{From: existing.Status, To: status, Reason: "checked repository update"}
+	if err := transition.ValidateTransition(existing.Criticality); err != nil {
+		return err
+	}
+	existing.Status = status
+	existing.Version = version + 1
+	existing.UpdatedAt = now()
+	return nil
 }
 
 func (r *FacilityRepository) Delete(ctx context.Context, id string) error {

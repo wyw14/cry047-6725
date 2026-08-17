@@ -100,7 +100,11 @@ func (s *ExecutionService) Submit(ctx context.Context, actor domain.Actor, in do
 	// is currently open (which would keep it in restricted_use / under_repair).
 	if f.Status == domain.FacilityPendingMaintenance || f.Status == domain.FacilityOverdue {
 		target := domain.MaintenanceCompletionStatus(f)
-		_ = s.ports.Facilities.UpdateStatusChecked(ctx, f.ID, target, f.Version)
+		if target != f.Status {
+			if err := s.ports.Facilities.UpdateStatusChecked(ctx, f.ID, target, f.Version); err != nil {
+				return nil, err
+			}
+		}
 	}
 	_ = s.audit(ctx, domain.AuditCreate, "Execution", e.ID, actor, nil, e, "")
 	_ = s.timeline(ctx, in.FacilityID, "execution_submitted", "提交保养执行记录", actor.Name, e)
