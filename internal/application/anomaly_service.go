@@ -142,14 +142,13 @@ func (s *AnomalyService) Reinspect(ctx context.Context, actor domain.Actor, in d
 	updated.ReinspectionResult = in.Result
 	updated.ReinspectedBy = in.ReinspectedBy
 	updated.ReinspectedAt = in.ReinspectedAt
-	if pass {
-		updated.Status = domain.AnomalyRecovered
-	} else {
-		updated.Status = domain.AnomalyOpen
-	}
+	updated.Status = domain.ReinspectionStatus(pass)
 	updated.Version = before.Version + 1
 	if err := s.ports.Anomalies.Update(ctx, &updated); err != nil {
 		return nil, err
+	}
+	if facility, err := s.ports.Facilities.Get(ctx, before.FacilityID); err == nil && updated.Status == domain.AnomalyRecovered {
+		_ = s.ports.Facilities.UpdateStatus(ctx, facility.ID, domain.FacilityRecovered, facility.Version)
 	}
 	_ = s.audit(ctx, domain.AuditUpdate, "Anomaly", in.AnomalyID, actor, before, &updated, "reinspection: "+in.Result)
 	_ = s.timeline(ctx, before.FacilityID, "anomaly_reinspected", "异常复检", actor.Name, map[string]any{
