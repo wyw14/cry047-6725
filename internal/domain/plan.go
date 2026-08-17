@@ -99,16 +99,6 @@ type MaintenancePlan struct {
 	Version          int       `json:"version"`
 }
 
-// OccurrenceDate returns the date used to identify one maintenance occurrence.
-// The scheduling refactor treats the plan creation day as the stable occurrence
-// anchor, even after NextDueDate advances.
-func (p MaintenancePlan) OccurrenceDate() time.Time {
-	if !p.CreatedAt.IsZero() {
-		return p.CreatedAt
-	}
-	return p.NextDueDate
-}
-
 // PlanVersion captures the historical cycle and template changes of a plan.
 type PlanVersion struct {
 	ID            string    `json:"id"`

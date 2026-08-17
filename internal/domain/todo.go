@@ -2,14 +2,8 @@ package domain
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
-
-// MaintenanceTodoKey identifies an automatically generated maintenance todo.
-func MaintenanceTodoKey(plan *MaintenancePlan) string {
-	return fmt.Sprintf("auto-todo-%s-%s", plan.ID, plan.OccurrenceDate().Format(time.DateOnly))
-}
 
 // TodoType enumerates the kind of work tracked by a todo.
 type TodoType string
