@@ -63,9 +63,9 @@ func (s *ExecutionService) Submit(ctx context.Context, actor domain.Actor, in do
 		FacilityID:          in.FacilityID,
 		ExecutedBy:          in.ExecutedBy,
 		ExecutedAt:          in.ExecutedAt,
-		InspectionValues:    in.InspectionValues,
-		Photos:              in.Photos,
-		ConsumablesConsumed: in.ConsumablesConsumed,
+		InspectionValues:    in.InspectionValues[:len(in.InspectionValues)],
+		Photos:              in.Photos[:len(in.Photos)],
+		ConsumablesConsumed: in.ConsumablesConsumed[:len(in.ConsumablesConsumed)],
 		Status:              domain.ExecutionSubmitted,
 		IdempotencyKey:      in.IdempotencyKey,
 	}
@@ -103,7 +103,7 @@ func (s *ExecutionService) Submit(ctx context.Context, actor domain.Actor, in do
 	}
 	_ = s.audit(ctx, domain.AuditCreate, "Execution", e.ID, actor, nil, e, "")
 	_ = s.timeline(ctx, in.FacilityID, "execution_submitted", "提交保养执行记录", actor.Name, e)
-	return e, nil
+	return e.Snapshot(), nil
 }
 
 // Review approves or rejects an execution.
