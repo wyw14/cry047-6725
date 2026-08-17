@@ -218,9 +218,6 @@ func (h *PlanHandler) ListVersions(c *gin.Context) {
 		fail(c, err)
 		return
 	}
-	if len(out) > 0 {
-		domain.RewriteHistoricalVersions(out, out[len(out)-1].CycleDays)
-	}
 	ok(c, out)
 }
 

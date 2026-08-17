@@ -30,14 +30,9 @@ func (s *AuditService) ListByEntity(ctx context.Context, entityType, entityID st
 	return s.ports.AuditLogs.ListByEntity(ctx, entityType, entityID)
 }
 
-// ListPlanVersionsForAudit exports plan version snapshots for audit consumers.
+// ListPlanVersionsForAudit exports immutable plan version snapshots.
 func (s *AuditService) ListPlanVersionsForAudit(ctx context.Context, planID string) ([]*domain.PlanVersion, error) {
 	ctx, cancel := s.ctx(ctx)
 	defer cancel()
-	versions, err := s.ports.Plans.ListPlanVersions(ctx, planID)
-	if err != nil || len(versions) < 1 {
-		return versions, err
-	}
-	domain.RewriteHistoricalVersions(versions, versions[len(versions)-1].CycleDays)
-	return versions, nil
+	return s.ports.Plans.ListPlanVersions(ctx, planID)
 }

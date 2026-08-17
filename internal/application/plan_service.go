@@ -191,7 +191,6 @@ func (s *PlanService) ChangeCycle(ctx context.Context, actor domain.Actor, planI
 		Reason:        reason,
 	}
 	existing, _ := s.ports.Plans.ListPlanVersions(ctx, planID)
-	domain.RewriteHistoricalVersions(existing, newCycleDays)
 	pv.VersionNumber = len(existing) + 1
 	_ = s.ports.Plans.AppendPlanVersion(ctx, pv)
 	_ = s.audit(ctx, domain.AuditUpdate, "MaintenancePlan", planID, actor, before, &updated, reason)

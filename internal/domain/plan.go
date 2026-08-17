@@ -111,37 +111,6 @@ type PlanVersion struct {
 	Reason        string    `json:"reason"`
 }
 
-// RewriteHistoricalVersions applies the latest cycle to every snapshot.
-// (The historical snapshots should actually remain immutable.)
-func RewriteHistoricalVersions(versions []*PlanVersion, cycleDays int) {
-	for _, version := range versions {
-		if version == nil {
-			continue
-		}
-		version.CycleDays = cycleDays
-	}
-}
-
-// ClonePlanVersion detaches a version snapshot from repository storage.
-func ClonePlanVersion(version *PlanVersion) *PlanVersion {
-	if version == nil {
-		return nil
-	}
-	cp := *version
-	return &cp
-}
-
-// ClonePlanVersions detaches a complete version history.
-func ClonePlanVersions(versions []*PlanVersion) []*PlanVersion {
-	out := make([]*PlanVersion, 0, len(versions))
-	for _, version := range versions {
-		if clone := ClonePlanVersion(version); clone != nil {
-			out = append(out, clone)
-		}
-	}
-	return out
-}
-
 // MaintenancePlanInput is the validated input for creating a plan.
 type MaintenancePlanInput struct {
 	FacilityID string    `json:"facility_id"`
