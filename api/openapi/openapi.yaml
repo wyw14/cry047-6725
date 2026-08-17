@@ -1,0 +1,806 @@
+openapi: 3.0.3
+info:
+  title: 公共设施预防性保养协同平台 API
+  version: 1.0.0
+  description: |
+    公共设施预防性保养协同平台的 HTTP API。
+    所有接口位于 /api/v1 前缀下，列表接口统一支持分页、排序与白名单筛选；
+    错误响应包含稳定错误码、可读消息、字段错误和 request_id。
+  contact:
+    name: 平台团队
+servers:
+  - url: http://localhost:8080/api/v1
+    description: 本地开发服务器
+tags:
+  - name: places
+    description: 场所管理
+  - name: responsible_persons
+    description: 责任人管理
+  - name: facilities
+    description: 设施管理
+  - name: plan_templates
+    description: 保养计划模板
+  - name: plans
+    description: 保养计划
+  - name: executions
+    description: 保养执行记录
+  - name: anomalies
+    description: 异常管理
+  - name: todos
+    description: 个人待办
+  - name: notifications
+    description: 本地提醒中心
+  - name: audit_logs
+    description: 审计日志
+  - name: timeline
+    description: 设施时间线
+  - name: scheduler
+    description: 本地调度器
+  - name: system
+    description: 系统健康检查
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: 存活探针
+      responses:
+        '200':
+          description: 服务存活
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+  /readyz:
+    get:
+      tags: [system]
+      summary: 就绪探针
+      responses:
+        '200':
+          description: 服务就绪
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /places:
+    get:
+      tags: [places]
+      summary: 场所列表
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/OrderBy'
+        - $ref: '#/components/parameters/Order'
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [library, exhibit, museum, community, other]
+        - in: query
+          name: name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PlacePage'
+    post:
+      tags: [places]
+      summary: 新建场所
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaceInput'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Place'
+  /places/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [places]
+      summary: 获取场所
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Place'
+    patch:
+      tags: [places]
+      summary: 更新场所
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaceInput'
+      responses:
+        '200':
+          description: 成功
+    delete:
+      tags: [places]
+      summary: 删除场所
+      responses:
+        '204':
+          description: 已删除
+
+  /responsible-persons:
+    get:
+      tags: [responsible_persons]
+      summary: 责任人列表
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/OrderBy'
+        - $ref: '#/components/parameters/Order'
+        - in: query
+          name: department
+          schema: {type: string}
+        - in: query
+          name: active
+          schema: {type: string, enum: ["true","false"]}
+      responses:
+        '200':
+          description: 成功
+    post:
+      tags: [responsible_persons]
+      summary: 新建责任人
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponsiblePersonInput'
+      responses:
+        '201':
+          description: 创建成功
+  /responsible-persons/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [responsible_persons]
+      summary: 获取责任人
+      responses: { '200': { description: 成功 } }
+    patch:
+      tags: [responsible_persons]
+      summary: 更新责任人
+      responses: { '200': { description: 成功 } }
+    delete:
+      tags: [responsible_persons]
+      summary: 删除责任人
+      responses: { '204': { description: 已删除 } }
+  /responsible-persons/{id}/active:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [responsible_persons]
+      summary: 启用/停用责任人
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                active: {type: boolean}
+      responses: { '200': { description: 成功 } }
+
+  /facilities:
+    get:
+      tags: [facilities]
+      summary: 设施台账
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/OrderBy'
+        - $ref: '#/components/parameters/Order'
+        - in: query
+          name: place_id
+          schema: {type: string}
+        - in: query
+          name: criticality
+          schema: {type: string, enum: [critical, important, standard]}
+        - in: query
+          name: status
+          schema: {type: string, enum: [normal, pending_maintenance, overdue, restricted_use, under_repair, recovered]}
+        - in: query
+          name: responsible_person_id
+          schema: {type: string}
+        - in: query
+          name: category
+          schema: {type: string}
+        - in: query
+          name: name
+          schema: {type: string}
+      responses:
+        '200':
+          description: 成功
+    post:
+      tags: [facilities]
+      summary: 新建设施
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacilityInput'
+      responses:
+        '201':
+          description: 创建成功
+  /facilities/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [facilities]
+      summary: 获取设施
+      responses: { '200': { description: 成功 } }
+    patch:
+      tags: [facilities]
+      summary: 更新设施
+      responses: { '200': { description: 成功 } }
+  /facilities/{id}/transition:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [facilities]
+      summary: 设施状态转换
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to:
+                  type: string
+                  enum: [normal, pending_maintenance, overdue, restricted_use, under_repair, recovered]
+                reason: {type: string}
+      responses:
+        '200':
+          description: 成功
+        '422':
+          description: 状态转换不允许（含稳定错误码 STATE_FORBIDDEN）
+  /facilities/{id}/next-date:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [facilities]
+      summary: 下次保养日期与逾期风险
+      responses: { '200': { description: 成功 } }
+  /facilities/{id}/timeline:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [timeline]
+      summary: 设施时间线
+      parameters:
+        - in: query
+          name: limit
+          schema: {type: integer, default: 50, maximum: 200}
+      responses: { '200': { description: 成功 } }
+
+  /plan-templates:
+    get:
+      tags: [plan_templates]
+      summary: 计划模板列表
+      responses: { '200': { description: 成功 } }
+    post:
+      tags: [plan_templates]
+      summary: 新建计划模板
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanTemplateInput'
+      responses: { '201': { description: 创建成功 } }
+  /plan-templates/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [plan_templates]
+      summary: 获取计划模板
+      responses: { '200': { description: 成功 } }
+    patch:
+      tags: [plan_templates]
+      summary: 更新计划模板
+      responses: { '200': { description: 成功 } }
+
+  /plans:
+    get:
+      tags: [plans]
+      summary: 保养计划列表
+      responses: { '200': { description: 成功 } }
+    post:
+      tags: [plans]
+      summary: 新建保养计划
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [facility_id, template_id]
+              properties:
+                facility_id: {type: string}
+                template_id: {type: string}
+                start_at: {type: string, format: date-time}
+      responses: { '201': { description: 创建成功 } }
+  /plans/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [plans]
+      summary: 获取保养计划
+      responses: { '200': { description: 成功 } }
+  /plans/{id}/cycle:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [plans]
+      summary: 调整周期（仅影响后续计划）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cycle_days, reason]
+              properties:
+                cycle_days: {type: integer, minimum: 1, maximum: 365}
+                reason: {type: string}
+      responses: { '200': { description: 成功 } }
+  /plans/{id}/skip:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [plans]
+      summary: 跳过当前周期
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string}
+      responses: { '200': { description: 成功 } }
+  /plans/{id}/regenerate:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [plans]
+      summary: 重新生成下次保养日期
+      responses: { '200': { description: 成功 } }
+  /plans/{id}/assign:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [plans]
+      summary: 调整计划负责人
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [person_id, reason]
+              properties:
+                person_id: {type: string}
+                reason: {type: string}
+      responses: { '200': { description: 成功 } }
+  /plans/{id}/versions:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [plans]
+      summary: 计划版本历史
+      responses: { '200': { description: 成功 } }
+
+  /executions:
+    get:
+      tags: [executions]
+      summary: 执行记录列表
+      responses: { '200': { description: 成功 } }
+    post:
+      tags: [executions]
+      summary: 提交保养执行记录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionInput'
+      responses: { '201': { description: 创建成功 } }
+  /executions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [executions]
+      summary: 获取执行记录
+      responses: { '200': { description: 成功 } }
+  /executions/{id}/review:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [executions]
+      summary: 复核执行记录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comment]
+              properties:
+                comment: {type: string}
+                approved: {type: boolean}
+      responses: { '200': { description: 成功 } }
+
+  /anomalies:
+    get:
+      tags: [anomalies]
+      summary: 异常列表
+      responses: { '200': { description: 成功 } }
+    post:
+      tags: [anomalies]
+      summary: 登记异常
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnomalyInput'
+      responses: { '201': { description: 创建成功 } }
+  /anomalies/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [anomalies]
+      summary: 获取异常
+      responses: { '200': { description: 成功 } }
+  /anomalies/{id}/rectify:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [anomalies]
+      summary: 提交整改措施
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [measure]
+              properties:
+                measure: {type: string}
+      responses: { '200': { description: 成功 } }
+  /anomalies/{id}/reinspect:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [anomalies]
+      summary: 提交复检结果
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties:
+                result: {type: string}
+                pass: {type: boolean}
+                at: {type: string, format: date-time}
+      responses: { '200': { description: 成功 } }
+  /anomalies/{id}/recover:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [anomalies]
+      summary: 恢复确认
+      responses: { '200': { description: 成功 } }
+
+  /todos:
+    get:
+      tags: [todos]
+      summary: 待办列表
+      responses: { '200': { description: 成功 } }
+  /todos/by-user/{user_id}:
+    parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema: {type: string}
+    get:
+      tags: [todos]
+      summary: 个人待办
+      responses: { '200': { description: 成功 } }
+  /todos/{id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [todos]
+      summary: 标记完成
+      responses: { '200': { description: 成功 } }
+  /todos/{id}/skip:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [todos]
+      summary: 跳过待办
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string}
+      responses: { '200': { description: 成功 } }
+  /todos/{id}/reassign:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [todos]
+      summary: 转派待办
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [person_id, reason]
+              properties:
+                person_id: {type: string}
+                reason: {type: string}
+      responses: { '200': { description: 成功 } }
+
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: 通知列表
+      responses: { '200': { description: 成功 } }
+  /notifications/by-user/{user_id}:
+    parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema: {type: string}
+    get:
+      tags: [notifications]
+      summary: 用户通知
+      responses: { '200': { description: 成功 } }
+  /notifications/unread/{user_id}:
+    parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema: {type: string}
+    get:
+      tags: [notifications]
+      summary: 用户未读通知
+      responses: { '200': { description: 成功 } }
+  /notifications/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [notifications]
+      summary: 标记已读
+      responses: { '204': { description: 已标记 } }
+
+  /audit-logs:
+    get:
+      tags: [audit_logs]
+      summary: 审计日志列表
+      responses: { '200': { description: 成功 } }
+
+  /scheduler/scan:
+    post:
+      tags: [scheduler]
+      summary: 手动触发调度器扫描
+      responses: { '200': { description: 成功 } }
+
+components:
+  parameters:
+    Limit:
+      in: query
+      name: limit
+      schema: {type: integer, default: 20, minimum: 1, maximum: 200}
+    Offset:
+      in: query
+      name: offset
+      schema: {type: integer, default: 0, minimum: 0}
+    OrderBy:
+      in: query
+      name: order_by
+      schema: {type: string}
+      description: 排序字段（白名单内）
+    Order:
+      in: query
+      name: order
+      schema: {type: string, enum: [asc, desc], default: asc}
+    PathId:
+      in: path
+      name: id
+      required: true
+      schema: {type: string}
+
+  schemas:
+    Response:
+      type: object
+      properties:
+        code: {type: string}
+        message: {type: string}
+        data: {}
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+        request_id: {type: string}
+    FieldError:
+      type: object
+      properties:
+        field: {type: string}
+        message: {type: string}
+
+    Place:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        type: {type: string}
+        address: {type: string}
+        code: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        version: {type: integer}
+    PlaceInput:
+      type: object
+      required: [name, type, address, code]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 128}
+        type: {type: string, enum: [library, exhibit, museum, community, other]}
+        address: {type: string}
+        code: {type: string, pattern: '^[A-Z0-9-]{3,32}$'}
+    PlacePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Place'}
+        total: {type: integer}
+        limit: {type: integer}
+        page: {type: integer}
+
+    ResponsiblePersonInput:
+      type: object
+      required: [name, email, phone]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 64}
+        email: {type: string, format: email}
+        phone: {type: string}
+        department: {type: string, maxLength: 64}
+
+    FacilityInput:
+      type: object
+      required: [place_id, name, code, category, responsible_person_id, criticality]
+      properties:
+        place_id: {type: string}
+        name: {type: string, minLength: 2, maxLength: 128}
+        code: {type: string, pattern: '^[A-Z0-9-]{3,32}$'}
+        category: {type: string, minLength: 2, maxLength: 64}
+        responsible_person_id: {type: string}
+        criticality: {type: string, enum: [critical, important, standard]}
+        description: {type: string, maxLength: 1024}
+        alternative_facility_id: {type: string}
+
+    PlanTemplateInput:
+      type: object
+      required: [name, cycle_days, inspection_items, consumables]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 128}
+        cycle_days: {type: integer, minimum: 1, maximum: 365}
+        inspection_items:
+          type: array
+          items: {$ref: '#/components/schemas/InspectionItem'}
+        consumables:
+          type: array
+          items: {$ref: '#/components/schemas/ConsumableSpec'}
+        requires_shutdown: {type: boolean}
+    InspectionItem:
+      type: object
+      required: [code, name]
+      properties:
+        code: {type: string}
+        name: {type: string}
+        required: {type: boolean}
+        unit: {type: string}
+        min_value: {type: number}
+        max_value: {type: number}
+    ConsumableSpec:
+      type: object
+      required: [code, name, quantity]
+      properties:
+        code: {type: string}
+        name: {type: string}
+        quantity: {type: integer, minimum: 1}
+        unit: {type: string}
+
+    ExecutionInput:
+      type: object
+      required: [plan_id, facility_id, executed_at, inspection_values, idempotency_key]
+      properties:
+        plan_id: {type: string}
+        facility_id: {type: string}
+        executed_by: {type: string}
+        executed_at: {type: string, format: date-time}
+        inspection_values:
+          type: array
+          items:
+            type: object
+            properties:
+              item_code: {type: string}
+              value: {type: string}
+              numeric_value: {type: number}
+              pass: {type: boolean}
+              note: {type: string}
+        photos:
+          type: array
+          items:
+            type: object
+            properties:
+              path: {type: string}
+              mime_type: {type: string}
+              size: {type: integer}
+              checksum: {type: string}
+        consumables_consumed:
+          type: array
+          items:
+            type: object
+            properties:
+              code: {type: string}
+              quantity: {type: integer}
+        idempotency_key: {type: string}
+
+    AnomalyInput:
+      type: object
+      required: [facility_id, discovered_at, description, severity, idempotency_key]
+      properties:
+        facility_id: {type: string}
+        execution_id: {type: string}
+        discovered_by: {type: string}
+        discovered_at: {type: string, format: date-time}
+        description: {type: string, minLength: 2, maxLength: 2048}
+        severity: {type: string, enum: [low, medium, high, critical]}
+        idempotency_key: {type: string}

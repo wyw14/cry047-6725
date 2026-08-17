@@ -1,0 +1,43 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+/tmp/
+/var/
+*.log
+*.coverprofile
+coverage.out
+coverage.txt
+
+# Local runtime data
+/var/
+/attachments/
+*.db
+*.sqlite
+
+# Frontend
+/web/node_modules/
+/web/dist/
+/web/.vite/
+/web/coverage/
+/web/*.local
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Env files (keep the .example, ignore actual values)
+.env
+.env.local
+.env.*.local
+
+# Build caches
+*.cache
