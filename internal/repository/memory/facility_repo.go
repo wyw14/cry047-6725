@@ -63,6 +63,10 @@ func (r *FacilityRepository) UpdateStatus(ctx context.Context, id string, status
 	return nil
 }
 
+func (r *FacilityRepository) UpdateStatusChecked(ctx context.Context, id string, status domain.FacilityStatus, version int) error {
+	return r.UpdateStatus(ctx, id, status, version)
+}
+
 func (r *FacilityRepository) Delete(ctx context.Context, id string) error {
 	r.store.mu.Lock()
 	defer r.store.mu.Unlock()

@@ -155,11 +155,18 @@ func (t FacilityStatusTransition) ValidateTransition(criticality Criticality) er
 	return nil
 }
 
+// MaintenanceCompletionStatus selects the facility status after a preventive
+// maintenance execution is submitted.
+func MaintenanceCompletionStatus(f *Facility) FacilityStatus {
+	return FacilityNormal
+}
+
 // FacilityRepository is the persistence contract.
 type FacilityRepository interface {
 	Create(ctx context.Context, f *Facility) error
 	Update(ctx context.Context, f *Facility) error
 	UpdateStatus(ctx context.Context, id string, status FacilityStatus, version int) error
+	UpdateStatusChecked(ctx context.Context, id string, status FacilityStatus, version int) error
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*Facility, error)
 	List(ctx context.Context, q PageQuery) (*PageResult[*Facility], error)

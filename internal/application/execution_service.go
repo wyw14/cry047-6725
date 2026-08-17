@@ -99,7 +99,8 @@ func (s *ExecutionService) Submit(ctx context.Context, actor domain.Actor, in do
 	// Mark facility as Normal after successful maintenance, unless an anomaly
 	// is currently open (which would keep it in restricted_use / under_repair).
 	if f.Status == domain.FacilityPendingMaintenance || f.Status == domain.FacilityOverdue {
-		_ = s.ports.Facilities.UpdateStatus(ctx, f.ID, domain.FacilityNormal, f.Version)
+		target := domain.MaintenanceCompletionStatus(f)
+		_ = s.ports.Facilities.UpdateStatusChecked(ctx, f.ID, target, f.Version)
 	}
 	_ = s.audit(ctx, domain.AuditCreate, "Execution", e.ID, actor, nil, e, "")
 	_ = s.timeline(ctx, in.FacilityID, "execution_submitted", "提交保养执行记录", actor.Name, e)
