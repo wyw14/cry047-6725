@@ -50,9 +50,6 @@ func (r *AnomalyRepository) Update(ctx context.Context, a *domain.Anomaly) error
 		return domain.ErrConflict("版本冲突: 异常 "+a.ID, nil)
 	}
 	a.UpdatedAt = now()
-	if a.ReinspectionResult != "" {
-		a.Status = domain.AnomalyRecovered
-	}
 	cp := *a
 	r.store.anomalies[a.ID] = &cp
 	return nil

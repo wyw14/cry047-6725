@@ -26,11 +26,6 @@ const (
 	AnomalyClosedNoAction AnomalyStatus = "closed_no_action"
 )
 
-// ReinspectionStatus returns the next anomaly status after reinspection.
-func ReinspectionStatus(pass bool) AnomalyStatus {
-	return AnomalyRecovered
-}
-
 // Anomaly is a discovered abnormal condition of a facility.
 type Anomaly struct {
 	ID                   string          `json:"id"`
