@@ -58,13 +58,42 @@ type Execution struct {
 	Version             int                     `json:"version"`
 }
 
-// Snapshot returns a value copy suitable for passing across service boundaries.
+// Snapshot returns a detached copy suitable for persistence and responses.
 func (e *Execution) Snapshot() *Execution {
 	if e == nil {
 		return nil
 	}
 	cp := *e
+	cp.InspectionValues = CloneInspectionValues(e.InspectionValues)
+	cp.Photos = ClonePhotoAttachments(e.Photos)
+	cp.ConsumablesConsumed = CloneConsumableConsumptions(e.ConsumablesConsumed)
 	return &cp
+}
+
+// CloneInspectionValues copies observations, including optional numeric values.
+func CloneInspectionValues(values []InspectionValue) []InspectionValue {
+	if values == nil {
+		return nil
+	}
+	out := make([]InspectionValue, len(values))
+	copy(out, values)
+	for i := range out {
+		if values[i].NumericValue != nil {
+			numeric := *values[i].NumericValue
+			out[i].NumericValue = &numeric
+		}
+	}
+	return out
+}
+
+// ClonePhotoAttachments copies the immutable photo metadata slice.
+func ClonePhotoAttachments(photos []PhotoAttachment) []PhotoAttachment {
+	return append([]PhotoAttachment(nil), photos...)
+}
+
+// CloneConsumableConsumptions copies the submitted consumable evidence.
+func CloneConsumableConsumptions(items []ConsumableConsumption) []ConsumableConsumption {
+	return append([]ConsumableConsumption(nil), items...)
 }
 
 // ExecutionInput is the validated input for submitting a maintenance record.

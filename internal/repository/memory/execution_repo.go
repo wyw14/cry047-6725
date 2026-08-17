@@ -31,8 +31,7 @@ func (r *ExecutionRepository) Create(ctx context.Context, e *domain.Execution) e
 	if e.Version == 0 {
 		e.Version = 1
 	}
-	cp := *e
-	r.store.executions[e.ID] = &cp
+	r.store.executions[e.ID] = e.Snapshot()
 	if e.IdempotencyKey != "" {
 		r.store.executionsByKey[e.IdempotencyKey] = e.ID
 	}
@@ -50,8 +49,7 @@ func (r *ExecutionRepository) Update(ctx context.Context, e *domain.Execution) e
 		return domain.ErrConflict("版本冲突: 执行记录 "+e.ID, nil)
 	}
 	e.UpdatedAt = now()
-	cp := *e
-	r.store.executions[e.ID] = &cp
+	r.store.executions[e.ID] = e.Snapshot()
 	return nil
 }
 
@@ -62,8 +60,7 @@ func (r *ExecutionRepository) Get(ctx context.Context, id string) (*domain.Execu
 	if !ok {
 		return nil, domain.ErrNotFound("Execution", id)
 	}
-	cp := *e
-	return &cp, nil
+	return e.Snapshot(), nil
 }
 
 func (r *ExecutionRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Execution, error) {
@@ -73,8 +70,7 @@ func (r *ExecutionRepository) GetByIdempotencyKey(ctx context.Context, key strin
 	if !ok {
 		return nil, domain.ErrNotFound("Execution by idempotency_key", key)
 	}
-	cp := *r.store.executions[id]
-	return &cp, nil
+	return r.store.executions[id].Snapshot(), nil
 }
 
 func (r *ExecutionRepository) List(ctx context.Context, q domain.PageQuery) (*domain.PageResult[*domain.Execution], error) {
@@ -82,8 +78,7 @@ func (r *ExecutionRepository) List(ctx context.Context, q domain.PageQuery) (*do
 	r.store.mu.RLock()
 	items := make([]*domain.Execution, 0, len(r.store.executions))
 	for _, e := range r.store.executions {
-		cp := *e
-		items = append(items, &cp)
+		items = append(items, e.Snapshot())
 	}
 	r.store.mu.RUnlock()
 	col := r.store.applySortWhitelist("executions", q.OrderBy)
@@ -136,8 +131,7 @@ func (r *ExecutionRepository) ListByFacility(ctx context.Context, facilityID str
 	out := []*domain.Execution{}
 	for _, e := range r.store.executions {
 		if e.FacilityID == facilityID {
-			cp := *e
-			out = append(out, &cp)
+			out = append(out, e.Snapshot())
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ExecutedAt.After(out[j].ExecutedAt) })
@@ -153,8 +147,7 @@ func (r *ExecutionRepository) ListByPlan(ctx context.Context, planID string) ([]
 	out := []*domain.Execution{}
 	for _, e := range r.store.executions {
 		if e.PlanID == planID {
-			cp := *e
-			out = append(out, &cp)
+			out = append(out, e.Snapshot())
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ExecutedAt.Before(out[j].ExecutedAt) })

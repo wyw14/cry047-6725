@@ -63,9 +63,9 @@ func (s *ExecutionService) Submit(ctx context.Context, actor domain.Actor, in do
 		FacilityID:          in.FacilityID,
 		ExecutedBy:          in.ExecutedBy,
 		ExecutedAt:          in.ExecutedAt,
-		InspectionValues:    in.InspectionValues[:len(in.InspectionValues)],
-		Photos:              in.Photos[:len(in.Photos)],
-		ConsumablesConsumed: in.ConsumablesConsumed[:len(in.ConsumablesConsumed)],
+		InspectionValues:    domain.CloneInspectionValues(in.InspectionValues),
+		Photos:              domain.ClonePhotoAttachments(in.Photos),
+		ConsumablesConsumed: domain.CloneConsumableConsumptions(in.ConsumablesConsumed),
 		Status:              domain.ExecutionSubmitted,
 		IdempotencyKey:      in.IdempotencyKey,
 	}

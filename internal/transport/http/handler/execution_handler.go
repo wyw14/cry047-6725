@@ -30,7 +30,7 @@ func (h *ExecutionHandler) Submit(c *gin.Context) {
 		fail(c, err)
 		return
 	}
-	created(c, out)
+	created(c, out.Snapshot())
 }
 
 // List handles GET /api/v1/executions.
@@ -51,7 +51,7 @@ func (h *ExecutionHandler) Get(c *gin.Context) {
 		fail(c, err)
 		return
 	}
-	ok(c, out)
+	ok(c, out.Snapshot())
 }
 
 // ReviewRequest is the body for POST /api/v1/executions/:id/review.
