@@ -99,14 +99,29 @@ type MaintenancePlan struct {
 	Version          int       `json:"version"`
 }
 
-// OccurrenceDate returns the date used to identify one maintenance occurrence.
-// The scheduling refactor treats the plan creation day as the stable occurrence
-// anchor, even after NextDueDate advances.
+// OccurrenceDate returns the date that identifies one maintenance occurrence.
+//
+// A maintenance plan produces a sequence of occurrences, each anchored by its
+// due date (NextDueDate). The due date is the value that advances between
+// occurrences: executing, skipping or regenerating the plan moves it forward to
+// the next cycle. Two occurrences of the same plan therefore differ precisely
+// in NextDueDate, which makes the due date the correct identity for an
+// occurrence — and, through MaintenanceTodoKey, for the idempotency key of the
+// auto-generated maintenance todo.
+//
+// Using the plan creation day (CreatedAt) here was wrong: it never changes, so
+// every overdue occurrence of a plan collapsed onto a single idempotency key
+// and only the first ever produced a reminder. The due date, by contrast, is
+// stable for the lifetime of one occurrence (repeated scans of the same
+// overdue occurrence see the same date) yet advances across occurrences, which
+// is exactly the property per-occurrence idempotency needs.
 func (p MaintenancePlan) OccurrenceDate() time.Time {
-	if !p.CreatedAt.IsZero() {
-		return p.CreatedAt
+	if !p.NextDueDate.IsZero() {
+		return p.NextDueDate
 	}
-	return p.NextDueDate
+	// A plan with no scheduled due date has no meaningful occurrence; fall back
+	// to the creation timestamp so callers still receive a deterministic value.
+	return p.CreatedAt
 }
 
 // PlanVersion captures the historical cycle and template changes of a plan.
