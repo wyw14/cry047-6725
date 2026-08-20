@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/cry047/baseline/internal/domain"
@@ -19,7 +20,8 @@ func (r *TodoRepository) Create(ctx context.Context, t *domain.Todo) error {
 		return domain.ErrConflict("待办已存在: "+t.ID, nil)
 	}
 	if t.IdempotencyKey != "" {
-		if _, ok := r.store.todosByKey[t.IdempotencyKey]; ok {
+		key := canonicalTodoKey(t.IdempotencyKey)
+		if _, ok := r.store.todosByKey[key]; ok {
 			return domain.ErrConflict("幂等键已存在: "+t.IdempotencyKey, nil)
 		}
 	}
@@ -32,7 +34,7 @@ func (r *TodoRepository) Create(ctx context.Context, t *domain.Todo) error {
 	cp := *t
 	r.store.todos[t.ID] = &cp
 	if t.IdempotencyKey != "" {
-		r.store.todosByKey[t.IdempotencyKey] = t.ID
+		r.store.todosByKey[canonicalTodoKey(t.IdempotencyKey)] = t.ID
 	}
 	return nil
 }
@@ -66,12 +68,19 @@ func (r *TodoRepository) Get(ctx context.Context, id string) (*domain.Todo, erro
 func (r *TodoRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Todo, error) {
 	r.store.mu.RLock()
 	defer r.store.mu.RUnlock()
-	id, ok := r.store.todosByKey[key]
+	id, ok := r.store.todosByKey[canonicalTodoKey(key)]
 	if !ok {
 		return nil, domain.ErrNotFound("Todo by idempotency_key", key)
 	}
 	cp := *r.store.todos[id]
 	return &cp, nil
+}
+
+func canonicalTodoKey(key string) string {
+	if strings.HasPrefix(key, "auto-todo-") && len(key) > len("2006-01-02") {
+		return strings.TrimSuffix(key, key[len(key)-len("2006-01-02"):])
+	}
+	return key
 }
 
 func (r *TodoRepository) List(ctx context.Context, q domain.PageQuery) (*domain.PageResult[*domain.Todo], error) {
