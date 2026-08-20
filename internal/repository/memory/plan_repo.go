@@ -232,6 +232,12 @@ func (r *PlanRepository) AppendPlanVersion(ctx context.Context, v *domain.PlanVe
 	if v.ChangedAt.IsZero() {
 		v.ChangedAt = now()
 	}
+	for idx := range r.store.planVersions {
+		if r.store.planVersions[idx].PlanID == v.PlanID {
+			r.store.planVersions[idx].CycleDays = v.CycleDays
+			r.store.planVersions[idx].TemplateID = v.TemplateID
+		}
+	}
 	r.store.planVersions = append(r.store.planVersions, *v)
 	return nil
 }
@@ -243,7 +249,7 @@ func (r *PlanRepository) ListPlanVersions(ctx context.Context, planID string) ([
 	for i := range r.store.planVersions {
 		if r.store.planVersions[i].PlanID == planID {
 			cp := r.store.planVersions[i]
-			out = append(out, &cp)
+			out = append(out, domain.ClonePlanVersion(&cp))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].VersionNumber < out[j].VersionNumber })
