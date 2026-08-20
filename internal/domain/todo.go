@@ -6,7 +6,16 @@ import (
 	"time"
 )
 
-// MaintenanceTodoKey identifies an automatically generated maintenance todo.
+// MaintenanceTodoKey derives the idempotency key for the auto-generated todo
+// that tracks a single overdue maintenance occurrence.
+//
+// The key is scoped to (plan, occurrence) where the occurrence is the plan's
+// NextDueDate (see MaintenancePlan.OccurrenceDate). This guarantees:
+//   - a plan that falls overdue again after being executed — its NextDueDate
+//     has advanced to a later cycle — produces a NEW todo for the new
+//     occurrence, instead of reusing the original reminder;
+//   - re-running the scheduler for the SAME occurrence (same NextDueDate)
+//     finds the existing key and skips, so it never produces duplicates.
 func MaintenanceTodoKey(plan *MaintenancePlan) string {
 	return fmt.Sprintf("auto-todo-%s-%s", plan.ID, plan.OccurrenceDate().Format(time.DateOnly))
 }

@@ -76,11 +76,15 @@ func (r *TodoRepository) GetByIdempotencyKey(ctx context.Context, key string) (*
 	return &cp, nil
 }
 
+// canonicalTodoKey normalizes an idempotency key before it is used as the
+// todosByKey index. It trims surrounding whitespace only — the full key is
+// preserved, including the per-occurrence date suffix on auto-generated
+// maintenance todos ("auto-todo-<planID>-<date>"). Keeping the suffix is what
+// lets two distinct overdue occurrences of the same plan coexist as two
+// separate todos; stripping it (the previous behaviour) collapsed them into a
+// single todo, so only the first overdue occurrence was ever surfaced.
 func canonicalTodoKey(key string) string {
-	if strings.HasPrefix(key, "auto-todo-") && len(key) > len("2006-01-02") {
-		return strings.TrimSuffix(key, key[len(key)-len("2006-01-02"):])
-	}
-	return key
+	return strings.TrimSpace(key)
 }
 
 func (r *TodoRepository) List(ctx context.Context, q domain.PageQuery) (*domain.PageResult[*domain.Todo], error) {
