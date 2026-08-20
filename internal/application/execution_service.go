@@ -57,15 +57,22 @@ func (s *ExecutionService) Submit(ctx context.Context, actor domain.Actor, in do
 	if err := validateConsumables(tpl.Consumables, in.ConsumablesConsumed); err != nil {
 		return nil, err
 	}
+	// Build the execution record from the caller's input, copying the
+	// evidence slices into freshly allocated backing arrays. The request data
+	// (in) is caller-owned and may be reused or mutated after Submit returns;
+	// without this deep copy the persisted record and the returned object would
+	// alias the same slice memory, so later edits to in would silently mutate
+	// the saved evidence. Cloning each element (rather than slicing in[:len])
+	// also detaches the NumericValue *float64 pointers.
 	e := &domain.Execution{
 		ID:                  s.id(),
 		PlanID:              in.PlanID,
 		FacilityID:          in.FacilityID,
 		ExecutedBy:          in.ExecutedBy,
 		ExecutedAt:          in.ExecutedAt,
-		InspectionValues:    in.InspectionValues[:len(in.InspectionValues)],
-		Photos:              in.Photos[:len(in.Photos)],
-		ConsumablesConsumed: in.ConsumablesConsumed[:len(in.ConsumablesConsumed)],
+		InspectionValues:    domain.CloneInspectionValues(in.InspectionValues),
+		Photos:              domain.ClonePhotoAttachments(in.Photos),
+		ConsumablesConsumed: domain.CloneConsumablesConsumed(in.ConsumablesConsumed),
 		Status:              domain.ExecutionSubmitted,
 		IdempotencyKey:      in.IdempotencyKey,
 	}
@@ -138,7 +145,9 @@ func (s *ExecutionService) Review(ctx context.Context, actor domain.Actor, execu
 		"approved": approved,
 		"comment":  comment,
 	})
-	return &updated, nil
+	// Return a deep snapshot so the caller receives an independent copy that
+	// cannot mutate, or be mutated by, the persisted record.
+	return (&updated).Snapshot(), nil
 }
 
 // Get retrieves an execution record.

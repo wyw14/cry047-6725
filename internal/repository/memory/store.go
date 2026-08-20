@@ -74,13 +74,6 @@ func NewStore() *Store {
 	return s
 }
 
-// clone returns a deep-enough copy of a value via JSON round-trip.
-// Used to prevent external mutation of in-memory state.
-func clone[T any](v T) T {
-	// We can't import json in store without circular dep, use a helper.
-	return v
-}
-
 // now returns the current time.
 func now() time.Time { return time.Now().UTC() }
 

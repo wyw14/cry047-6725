@@ -24,11 +24,30 @@ type InspectionValue struct {
 	Note         string   `json:"note,omitempty"`
 }
 
+// Clone returns a deep copy of the inspection value. Because NumericValue is a
+// pointer, a plain struct copy would alias the same float64 allocation; Clone
+// re-points it at a freshly allocated value so the copy and the original share
+// no mutable state.
+func (v InspectionValue) Clone() InspectionValue {
+	cp := v
+	if v.NumericValue != nil {
+		n := *v.NumericValue
+		cp.NumericValue = &n
+	}
+	return cp
+}
+
 // ConsumableConsumption records how much of a consumable was actually consumed.
 type ConsumableConsumption struct {
 	Code     string `json:"code"`
 	Quantity int    `json:"quantity"`
 }
+
+// Clone returns a deep copy of the consumable consumption record. It has no
+// pointer or slice fields today, but the method is provided so evidence copy
+// helpers can treat all value types uniformly and remain correct if fields are
+// added later.
+func (c ConsumableConsumption) Clone() ConsumableConsumption { return c }
 
 // PhotoAttachment is a verified photo captured during execution.
 type PhotoAttachment struct {
@@ -36,6 +55,48 @@ type PhotoAttachment struct {
 	MimeType string `json:"mime_type"`
 	Size     int64  `json:"size"`
 	Checksum string `json:"checksum"`
+}
+
+// Clone returns a deep copy of the photo attachment. See ConsumableConsumption.
+func (p PhotoAttachment) Clone() PhotoAttachment { return p }
+
+// CloneInspectionValues returns a fully independent copy of the slice: a new
+// backing array whose elements are each deep-cloned (including their
+// NumericValue pointer). The nil-vs-empty distinction is preserved so callers
+// that rely on JSON null/[] semantics are unaffected.
+func CloneInspectionValues(in []InspectionValue) []InspectionValue {
+	if in == nil {
+		return nil
+	}
+	out := make([]InspectionValue, len(in))
+	for i := range in {
+		out[i] = in[i].Clone()
+	}
+	return out
+}
+
+// ClonePhotoAttachments returns a fully independent copy of the slice.
+func ClonePhotoAttachments(in []PhotoAttachment) []PhotoAttachment {
+	if in == nil {
+		return nil
+	}
+	out := make([]PhotoAttachment, len(in))
+	for i := range in {
+		out[i] = in[i].Clone()
+	}
+	return out
+}
+
+// CloneConsumablesConsumed returns a fully independent copy of the slice.
+func CloneConsumablesConsumed(in []ConsumableConsumption) []ConsumableConsumption {
+	if in == nil {
+		return nil
+	}
+	out := make([]ConsumableConsumption, len(in))
+	for i := range in {
+		out[i] = in[i].Clone()
+	}
+	return out
 }
 
 // Execution is a single maintenance execution record.
@@ -58,12 +119,32 @@ type Execution struct {
 	Version             int                     `json:"version"`
 }
 
-// Snapshot returns a value copy suitable for passing across service boundaries.
+// Snapshot returns a deep value copy suitable for passing across service
+// boundaries. The returned record shares no backing storage — neither slice
+// headers nor pointer fields like InspectionValue.NumericValue — with the
+// receiver, so callers may freely mutate the returned record (or any element
+// within it) without affecting persisted or in-flight state, and vice versa.
+// This is what guarantees that editing the request data or the response object
+// after a submission cannot reach back into the saved evidence.
 func (e *Execution) Snapshot() *Execution {
+	return e.Clone()
+}
+
+// Clone returns a deep, independent copy of the execution record. Every slice
+// (InspectionValues, Photos, ConsumablesConsumed) is re-allocated with freshly
+// cloned elements, and every pointer field reachable from those elements is
+// re-pointed at a new allocation. The copy and the original therefore share no
+// mutable state.
+//
+// A nil receiver yields a nil result.
+func (e *Execution) Clone() *Execution {
 	if e == nil {
 		return nil
 	}
 	cp := *e
+	cp.InspectionValues = CloneInspectionValues(e.InspectionValues)
+	cp.Photos = ClonePhotoAttachments(e.Photos)
+	cp.ConsumablesConsumed = CloneConsumablesConsumed(e.ConsumablesConsumed)
 	return &cp
 }
 
