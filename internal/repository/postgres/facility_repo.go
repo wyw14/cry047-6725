@@ -103,6 +103,10 @@ func (r *FacilityRepository) UpdateStatus(ctx context.Context, id string, status
 	return nil
 }
 
+func (r *FacilityRepository) UpdateStatusChecked(ctx context.Context, id string, status domain.FacilityStatus, version int) error {
+	return r.UpdateStatus(ctx, id, status, version)
+}
+
 // Delete removes a facility.
 func (r *FacilityRepository) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM facilities WHERE id=$1`, id)
