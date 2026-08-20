@@ -26,9 +26,69 @@ const (
 	AnomalyClosedNoAction AnomalyStatus = "closed_no_action"
 )
 
-// ReinspectionStatus returns the next anomaly status after reinspection.
+// ReinspectionStatus returns the next anomaly status after a reinspection.
+//
+// A passing reinspection advances the anomaly to recovered (awaiting recovery
+// confirmation); a failing reinspection reopens the anomaly so another
+// rectification cycle can run. The issue is therefore kept open until a
+// follow-up inspection actually passes.
+//
+// The associated facility's visible status is advanced to recovered only when
+// recovery is later confirmed via Recover — never merely because a reinspection
+// passed — so the status surfaced across the ledger, detail page and timeline
+// stays consistent everywhere.
 func ReinspectionStatus(pass bool) AnomalyStatus {
-	return AnomalyRecovered
+	if pass {
+		return AnomalyRecovered
+	}
+	return AnomalyOpen
+}
+
+// AnomalyStatusTransition captures an anomaly state transition request and
+// enforces the anomaly lifecycle invariants, mirroring the facility state
+// machine. Centralising the rules here keeps the application service honest:
+// the recovered status is reachable ONLY through a passing reinspection, and
+// a failing reinspection always reopens the anomaly.
+type AnomalyStatusTransition struct {
+	From AnomalyStatus
+	To   AnomalyStatus
+}
+
+// allowedAnomalyTransitions is the anomaly state machine.
+//
+//	 open          -> reinspecting            (rectify)
+//	 reinspecting  -> recovered               (reinspect pass)
+//	 reinspecting  -> open                    (reinspect fail: reopen for another cycle)
+//	 recovered     -> recovered               (recovery confirmation; idempotent self-transition
+//	                                          that records the confirmer without advancing status)
+//
+// "rectifying" and "closed_no_action" are terminal/reserved starting points
+// with no outgoing transitions declared here.
+var allowedAnomalyTransitions = map[AnomalyStatus]map[AnomalyStatus]struct{}{
+	AnomalyOpen: {
+		AnomalyReinspecting: {},
+	},
+	AnomalyReinspecting: {
+		AnomalyRecovered: {},
+		AnomalyOpen:      {},
+	},
+	AnomalyRecovered: {
+		// Recovery confirmation is an idempotent self-transition, so a same-status
+		// move is explicitly permitted here (unlike the facility machine).
+		AnomalyRecovered: {},
+	},
+}
+
+// Validate enforces the anomaly state machine invariants.
+func (t AnomalyStatusTransition) Validate() error {
+	destinations, ok := allowedAnomalyTransitions[t.From]
+	if !ok {
+		return ErrStateForbidden("非法的异常起始状态: " + string(t.From))
+	}
+	if _, ok := destinations[t.To]; !ok {
+		return ErrStateForbidden("异常状态转换不允许: " + string(t.From) + " -> " + string(t.To))
+	}
+	return nil
 }
 
 // Anomaly is a discovered abnormal condition of a facility.

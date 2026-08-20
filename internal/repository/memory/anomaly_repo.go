@@ -49,10 +49,14 @@ func (r *AnomalyRepository) Update(ctx context.Context, a *domain.Anomaly) error
 	if existing.Version != a.Version-1 {
 		return domain.ErrConflict("版本冲突: 异常 "+a.ID, nil)
 	}
+	// The repository must not re-derive business status from field presence.
+	// The application service computes the anomaly status through the domain
+	// state machine (e.g. a failing reinspection reopens the anomaly to
+	// "open"). Overriding it here based on ReinspectionResult being non-empty
+	// would silently resurrect the "recovered" status and let a failed
+	// follow-up inspection be confirmed as recovered — exactly the
+	// inconsistency we are fixing. Persist the status the caller computed.
 	a.UpdatedAt = now()
-	if a.ReinspectionResult != "" {
-		a.Status = domain.AnomalyRecovered
-	}
 	cp := *a
 	r.store.anomalies[a.ID] = &cp
 	return nil

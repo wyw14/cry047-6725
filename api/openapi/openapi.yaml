@@ -510,6 +510,13 @@ paths:
     post:
       tags: [anomalies]
       summary: 提交复检结果
+      description: |
+        提交复检结果。`pass` 为权威判定：复检通过（pass=true）将异常推进到
+        recovered 状态并等待恢复确认；复检未通过（pass=false）将异常重新置为
+        open，设施保持 under_repair，且不允许执行恢复确认——即异常在复检通过前
+        始终保持开启。`result` 仅为复检结果描述，绝不参与判定是否通过。
+        复检通过后，设施的可见状态只有在执行恢复确认（/recover）后才会变为
+        recovered，保证各处展示一致。
       requestBody:
         required: true
         content:
@@ -518,8 +525,8 @@ paths:
               type: object
               required: [result]
               properties:
-                result: {type: string}
-                pass: {type: boolean}
+                result: {type: string, description: 复检结果描述}
+                pass: {type: boolean, description: 是否通过复检（权威判定，默认 false）}
                 at: {type: string, format: date-time}
       responses: { '200': { description: 成功 } }
   /anomalies/{id}/recover:
@@ -528,7 +535,14 @@ paths:
     post:
       tags: [anomalies]
       summary: 恢复确认
-      responses: { '200': { description: 成功 } }
+      description: |
+        确认设施已恢复。仅当异常处于 recovered 状态（即复检通过）时可执行。
+        这是唯一将设施可见状态置为 recovered 的步骤；在复检通过但尚未确认恢复
+        期间，设施保持 under_repair，以保证台账、详情页与时间线展示一致。
+        未通过复检（异常为 open）时返回 422 STATE_FORBIDDEN。
+      responses:
+        '200': { description: 成功 }
+        '422': { description: 异常未处于 recovered 状态，STATE_FORBIDDEN }
 
   /todos:
     get:

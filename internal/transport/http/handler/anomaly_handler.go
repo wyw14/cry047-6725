@@ -102,7 +102,12 @@ func (h *AnomalyHandler) Reinspect(c *gin.Context) {
 		ReinspectedBy: actor.ID,
 		ReinspectedAt: at,
 	}
-	pass := body.Pass || body.Result != ""
+	// pass is authoritative: a failed follow-up inspection (pass=false) must
+	// keep the anomaly open and block recovery confirmation. We must not infer
+	// pass from the presence of a result string — "result" is a required,
+	// non-empty description of the outcome, so treating any non-empty result as
+	// a pass would make a failing reinspection unreachable over HTTP.
+	pass := body.Pass
 	out, err := h.svc.Reinspect(c.Request.Context(), actor, in, pass)
 	if err != nil {
 		fail(c, err)

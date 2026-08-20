@@ -417,3 +417,129 @@ func TestErrorResponseShape(t *testing.T) {
 		t.Errorf("expected non-empty request_id")
 	}
 }
+
+// TestAnomalyFailedReinspection_KeepsIssueOpen is an end-to-end test of the
+// handler-level fix. It drives the full anomaly lifecycle over HTTP and asserts
+// that a FAILING follow-up inspection (pass=false):
+//   - reopens the anomaly (status "open"), never "recovered";
+//   - leaves the facility in "under_repair", never "recovered";
+//   - makes recovery confirmation refused (422 STATE_FORBIDDEN).
+//
+// Before the fix, the handler computed pass = body.Pass || body.Result != "",
+// and since "result" is a required non-empty string, pass was always true — so
+// a failing reinspection was unreachable over HTTP and the facility was marked
+// recovered anyway. This test guards against that regression.
+func TestAnomalyFailedReinspection_KeepsIssueOpen(t *testing.T) {
+	srv := setupServer(t)
+
+	// 1. Discover a critical anomaly on a seeded critical facility.
+	w := do(t, srv, "POST", "/api/v1/anomalies", map[string]any{
+		"facility_id":     "fac-hvac-001",
+		"description":     "配电柜温升异常",
+		"severity":        "critical",
+		"idempotency_key": "http-failed-reinspect",
+	}, operatorHeaders())
+	if w.Code != 201 {
+		t.Fatalf("discover: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		Data domain.Anomaly `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal discover: %v", err)
+	}
+	anomalyID := created.Data.ID
+	if anomalyID == "" {
+		t.Fatalf("discover returned empty anomaly id")
+	}
+	// Critical anomaly auto-transitions the facility to restricted_use.
+	if got := facilityStatusHTTP(t, srv, "fac-hvac-001"); got != domain.FacilityRestrictedUse {
+		t.Fatalf("after discover: facility %s, want restricted_use", got)
+	}
+
+	// 2. Rectify -> anomaly reinspecting, facility under_repair.
+	w = do(t, srv, "POST", "/api/v1/anomalies/"+anomalyID+"/rectify", map[string]any{
+		"measure": "紧固接点并降载",
+	}, supervisorHeaders())
+	if w.Code != 200 {
+		t.Fatalf("rectify: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := facilityStatusHTTP(t, srv, "fac-hvac-001"); got != domain.FacilityUnderRepair {
+		t.Fatalf("after rectify: facility %s, want under_repair", got)
+	}
+
+	// 3. Failing follow-up inspection (pass=false) reopens the anomaly.
+	w = do(t, srv, "POST", "/api/v1/anomalies/"+anomalyID+"/reinspect", map[string]any{
+		"result": "温升仍超限",
+		"pass":   false,
+	}, supervisorHeaders())
+	if w.Code != 200 {
+		t.Fatalf("reinspect: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var reinspect struct {
+		Data domain.Anomaly `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &reinspect); err != nil {
+		t.Fatalf("unmarshal reinspect: %v", err)
+	}
+	if reinspect.Data.Status != domain.AnomalyOpen {
+		t.Fatalf("failed reinspection entered %s, want open (issue must stay open)", reinspect.Data.Status)
+	}
+	// The facility must remain under_repair, never recovered.
+	if got := facilityStatusHTTP(t, srv, "fac-hvac-001"); got != domain.FacilityUnderRepair {
+		t.Fatalf("after failed reinspection: facility %s, want under_repair", got)
+	}
+
+	// 4. Recovery confirmation must be refused while the issue is still open.
+	w = do(t, srv, "POST", "/api/v1/anomalies/"+anomalyID+"/recover", map[string]any{}, supervisorHeaders())
+	if w.Code != 422 {
+		t.Fatalf("recover: expected 422, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), domain.CodeStateForbidden) {
+		t.Fatalf("recover: expected %s in body: %s", domain.CodeStateForbidden, w.Body.String())
+	}
+
+	// 5. A passing follow-up inspection then confirmation finally recovers
+	//    the facility — proving the issue only closes once a reinspection passes.
+	w = do(t, srv, "POST", "/api/v1/anomalies/"+anomalyID+"/rectify", map[string]any{
+		"measure": "更换绕组并复测",
+	}, supervisorHeaders())
+	if w.Code != 200 {
+		t.Fatalf("re-rectify: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	w = do(t, srv, "POST", "/api/v1/anomalies/"+anomalyID+"/reinspect", map[string]any{
+		"result": "温升恢复正常",
+		"pass":   true,
+	}, supervisorHeaders())
+	if w.Code != 200 {
+		t.Fatalf("reinspect pass: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	// Passing reinspection does NOT yet mark the facility recovered.
+	if got := facilityStatusHTTP(t, srv, "fac-hvac-001"); got != domain.FacilityUnderRepair {
+		t.Fatalf("after passing reinspection: facility %s, want under_repair (recovery not yet confirmed)", got)
+	}
+	w = do(t, srv, "POST", "/api/v1/anomalies/"+anomalyID+"/recover", map[string]any{}, supervisorHeaders())
+	if w.Code != 200 {
+		t.Fatalf("recover: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := facilityStatusHTTP(t, srv, "fac-hvac-001"); got != domain.FacilityRecovered {
+		t.Fatalf("after recover: facility %s, want recovered", got)
+	}
+}
+
+// facilityStatusHTTP fetches a facility's stored status over HTTP, which is the
+// status shown in the ledger and detail pages.
+func facilityStatusHTTP(t *testing.T, srv *phttp.Server, id string) domain.FacilityStatus {
+	t.Helper()
+	w := do(t, srv, "GET", "/api/v1/facilities/"+id, nil, nil)
+	if w.Code != 200 {
+		t.Fatalf("get facility %s: expected 200, got %d: %s", id, w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data domain.Facility `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal facility: %v", err)
+	}
+	return resp.Data.Status
+}

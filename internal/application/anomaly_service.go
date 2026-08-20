@@ -93,8 +93,10 @@ func (s *AnomalyService) Rectify(ctx context.Context, actor domain.Actor, in dom
 	if err != nil {
 		return nil, err
 	}
-	if before.Status != domain.AnomalyOpen {
-		return nil, domain.ErrStateForbidden("仅 open 状态可被整改")
+	// Only an open anomaly may be rectified; enforce via the state machine so
+	// the rule lives in one place alongside the reinspection/recovery rules.
+	if err := (domain.AnomalyStatusTransition{From: before.Status, To: domain.AnomalyReinspecting}).Validate(); err != nil {
+		return nil, err
 	}
 	f, err := s.ports.Facilities.Get(ctx, before.FacilityID)
 	if err != nil {
@@ -135,21 +137,30 @@ func (s *AnomalyService) Reinspect(ctx context.Context, actor domain.Actor, in d
 	if err != nil {
 		return nil, err
 	}
-	if before.Status != domain.AnomalyReinspecting {
-		return nil, domain.ErrStateForbidden("仅 reinspecting 状态可被复检")
+	next := domain.ReinspectionStatus(pass)
+	// Enforce the anomaly state machine: only a reinspecting anomaly may be
+	// reinspected, and a failing reinspection must reopen it (open) rather
+	// than advance it to recovered.
+	if err := (domain.AnomalyStatusTransition{From: before.Status, To: next}).Validate(); err != nil {
+		return nil, err
 	}
 	updated := *before
 	updated.ReinspectionResult = in.Result
 	updated.ReinspectedBy = in.ReinspectedBy
 	updated.ReinspectedAt = in.ReinspectedAt
-	updated.Status = domain.ReinspectionStatus(pass)
+	updated.Status = next
 	updated.Version = before.Version + 1
 	if err := s.ports.Anomalies.Update(ctx, &updated); err != nil {
 		return nil, err
 	}
-	if facility, err := s.ports.Facilities.Get(ctx, before.FacilityID); err == nil && updated.Status == domain.AnomalyRecovered {
-		_ = s.ports.Facilities.UpdateStatus(ctx, facility.ID, domain.FacilityRecovered, facility.Version)
-	}
+	// The facility's visible status is deliberately NOT advanced to recovered
+	// here. A passing reinspection only verifies the repair work; the facility
+	// stays under_repair until recovery is explicitly confirmed via Recover. A
+	// failing reinspection reopens the anomaly and likewise leaves the facility
+	// under_repair. Centralising the facility's "recovered" status in Recover
+	// keeps the status shown across the ledger, detail page and timeline
+	// consistent: "recovered" always implies a confirmed recovery, never a
+	// mere passing reinspection or — critically — a failing one.
 	_ = s.audit(ctx, domain.AuditUpdate, "Anomaly", in.AnomalyID, actor, before, &updated, "reinspection: "+in.Result)
 	_ = s.timeline(ctx, before.FacilityID, "anomaly_reinspected", "异常复检", actor.Name, map[string]any{
 		"pass":   pass,
@@ -174,8 +185,12 @@ func (s *AnomalyService) Recover(ctx context.Context, actor domain.Actor, in dom
 	if err != nil {
 		return nil, err
 	}
-	if before.Status != domain.AnomalyRecovered {
-		return nil, domain.ErrStateForbidden("仅 recovered 状态可被确认恢复")
+	// Only an anomaly that passed reinspection (recovered status) may be
+	// confirmed. An anomaly reopened by a failing reinspection is "open" and
+	// is rejected here, so the issue stays open until a follow-up inspection
+	// passes.
+	if err := (domain.AnomalyStatusTransition{From: before.Status, To: domain.AnomalyRecovered}).Validate(); err != nil {
+		return nil, err
 	}
 	f, err := s.ports.Facilities.Get(ctx, before.FacilityID)
 	if err != nil {
@@ -184,11 +199,16 @@ func (s *AnomalyService) Recover(ctx context.Context, actor domain.Actor, in dom
 	updated := *before
 	updated.RecoveredBy = in.RecoveredBy
 	updated.RecoveredAt = s.now()
-	updated.Status = domain.AnomalyRecovered // keep as recovered for audit; same status
+	updated.Status = domain.AnomalyRecovered // confirmed; status stays recovered
 	updated.Version = before.Version + 1
 	if err := s.ports.Anomalies.Update(ctx, &updated); err != nil {
 		return nil, err
 	}
+	// Recovery confirmation is the single point at which the facility's
+	// visible status advances to recovered. Because Reinspect no longer
+	// pre-marks the facility, the facility is still under_repair (or
+	// restricted_use) here, so this transition is live rather than a no-op —
+	// keeping "recovered" consistent across every surface that shows it.
 	if f.Status == domain.FacilityUnderRepair || f.Status == domain.FacilityRestrictedUse {
 		_ = s.ports.Facilities.UpdateStatus(ctx, f.ID, domain.FacilityRecovered, f.Version)
 	}
