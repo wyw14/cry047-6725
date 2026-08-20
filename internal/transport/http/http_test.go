@@ -417,3 +417,60 @@ func TestErrorResponseShape(t *testing.T) {
 		t.Errorf("expected non-empty request_id")
 	}
 }
+
+// TestPlanVersionsHistoryIsImmutable is the end-to-end guard for the
+// "changing a plan's cycle must not rewrite older history" invariant. It drives
+// the real HTTP /plans/:id/versions endpoint (which previously overwrote every
+// snapshot with the latest cycle when serving) and confirms that after a cycle
+// change each snapshot keeps the cycle actually in effect at the time.
+func TestPlanVersionsHistoryIsImmutable(t *testing.T) {
+	srv := setupServer(t)
+	// plan-004 is seeded from tpl-lamp-180 (cycle 180) on a standard facility.
+	const planID = "plan-004"
+	const originalCycle = 180
+	const newCycle = 90
+
+	// Baseline: a single snapshot carrying the template's cycle.
+	w := do(t, srv, "GET", "/api/v1/plans/"+planID+"/versions", nil, adminHeaders())
+	if w.Code != 200 {
+		t.Fatalf("list versions: %d: %s", w.Code, w.Body.String())
+	}
+	var before struct {
+		Data []domain.PlanVersion `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &before); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(before.Data) != 1 || before.Data[0].CycleDays != originalCycle {
+		t.Fatalf("baseline snapshots = %+v, want one at cycle %d", before.Data, originalCycle)
+	}
+
+	// Change the cycle.
+	w = do(t, srv, "PATCH", "/api/v1/plans/"+planID+"/cycle",
+		map[string]any{"cycle_days": newCycle, "reason": "缩短照明保养周期"}, adminHeaders())
+	if w.Code != 200 {
+		t.Fatalf("change cycle: %d: %s", w.Code, w.Body.String())
+	}
+
+	// History must now contain the original snapshot UNCHANGED plus the new one.
+	w = do(t, srv, "GET", "/api/v1/plans/"+planID+"/versions", nil, adminHeaders())
+	if w.Code != 200 {
+		t.Fatalf("list versions (after): %d: %s", w.Code, w.Body.String())
+	}
+	var after struct {
+		Data []domain.PlanVersion `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &after); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(after.Data) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(after.Data))
+	}
+	if after.Data[0].CycleDays != originalCycle {
+		t.Errorf("historical snapshot cycle = %d, want %d (history was rewritten)",
+			after.Data[0].CycleDays, originalCycle)
+	}
+	if after.Data[1].CycleDays != newCycle {
+		t.Errorf("new snapshot cycle = %d, want %d", after.Data[1].CycleDays, newCycle)
+	}
+}

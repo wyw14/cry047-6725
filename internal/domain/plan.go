@@ -99,7 +99,13 @@ type MaintenancePlan struct {
 	Version          int       `json:"version"`
 }
 
-// PlanVersion captures the historical cycle and template changes of a plan.
+// PlanVersion is an immutable, append-only snapshot of a plan's cycle and
+// template at the moment it was changed. Once recorded it MUST NOT be mutated:
+// historical snapshots are how the system answers "which cycle was actually in
+// effect when this execution / audit record was created?". Changing a plan's
+// cycle therefore appends a new PlanVersion and updates the live
+// MaintenancePlan; it never overwrites a prior snapshot. See EffectiveCycleAt
+// for reconstructing the historical value.
 type PlanVersion struct {
 	ID            string    `json:"id"`
 	PlanID        string    `json:"plan_id"`
@@ -111,15 +117,91 @@ type PlanVersion struct {
 	Reason        string    `json:"reason"`
 }
 
-// RewriteHistoricalVersions applies the latest cycle to every snapshot.
-// (The historical snapshots should actually remain immutable.)
-func RewriteHistoricalVersions(versions []*PlanVersion, cycleDays int) {
-	for _, version := range versions {
-		if version == nil {
+// LatestPlanVersion returns the most recent snapshot by ChangedAt (breaking
+// ties by VersionNumber so seeded records with equal timestamps stay ordered).
+// The boolean is false when versions is empty or contains only nil entries.
+func LatestPlanVersion(versions []*PlanVersion) (*PlanVersion, bool) {
+	var latest *PlanVersion
+	for i := range versions {
+		v := versions[i]
+		if v == nil {
 			continue
 		}
-		version.CycleDays = cycleDays
+		if latest == nil ||
+			v.ChangedAt.After(latest.ChangedAt) ||
+			(v.ChangedAt.Equal(latest.ChangedAt) && v.VersionNumber > latest.VersionNumber) {
+			latest = v
+		}
 	}
+	return latest, latest != nil
+}
+
+// EarliestPlanVersion returns the oldest snapshot by ChangedAt (breaking ties
+// by VersionNumber ascending). The boolean is false when there are no entries.
+func EarliestPlanVersion(versions []*PlanVersion) (*PlanVersion, bool) {
+	var earliest *PlanVersion
+	for i := range versions {
+		v := versions[i]
+		if v == nil {
+			continue
+		}
+		if earliest == nil ||
+			v.ChangedAt.Before(earliest.ChangedAt) ||
+			(v.ChangedAt.Equal(earliest.ChangedAt) && v.VersionNumber < earliest.VersionNumber) {
+			earliest = v
+		}
+	}
+	return earliest, earliest != nil
+}
+
+// NextVersionNumber returns the version number a newly appended snapshot
+// should carry: one greater than the highest existing VersionNumber, or 1 when
+// the history is empty. It is robust to gaps caused by pruned records.
+func NextVersionNumber(versions []*PlanVersion) int {
+	max := 0
+	for i := range versions {
+		v := versions[i]
+		if v != nil && v.VersionNumber > max {
+			max = v.VersionNumber
+		}
+	}
+	return max + 1
+}
+
+// EffectiveCycleAt returns the maintenance cycle that was in effect at instant
+// t: the cycle of the most recent snapshot whose ChangedAt is not after t.
+// Because snapshots are immutable, this reconstructs the historical value
+// rather than reading the (mutable) live plan — the basis for showing audit
+// records with the cycle that was actually used at the time.
+//
+// When t precedes every snapshot, the earliest configured cycle is returned
+// (it was already in effect). When there are no snapshots at all the result is
+// (0, false).
+func EffectiveCycleAt(versions []*PlanVersion, t time.Time) (int, bool) {
+	var match *PlanVersion
+	for i := range versions {
+		v := versions[i]
+		if v == nil {
+			continue
+		}
+		if v.ChangedAt.After(t) {
+			continue
+		}
+		if match == nil ||
+			v.ChangedAt.After(match.ChangedAt) ||
+			(v.ChangedAt.Equal(match.ChangedAt) && v.VersionNumber > match.VersionNumber) {
+			match = v
+		}
+	}
+	if match != nil {
+		return match.CycleDays, true
+	}
+	// t precedes every stamp: the earliest configured cycle was already in effect.
+	earliest, ok := EarliestPlanVersion(versions)
+	if !ok {
+		return 0, false
+	}
+	return earliest.CycleDays, true
 }
 
 // ClonePlanVersion detaches a version snapshot from repository storage.

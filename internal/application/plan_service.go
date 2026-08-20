@@ -180,19 +180,20 @@ func (s *PlanService) ChangeCycle(ctx context.Context, actor domain.Actor, planI
 	if err := s.ports.Plans.UpdatePlan(ctx, &updated); err != nil {
 		return nil, err
 	}
-	// Append plan version history.
+	// Append plan version history. The new cycle is recorded as a new
+	// immutable snapshot; prior snapshots are left untouched so that audit
+	// history continues to reflect the cycle actually in effect at each point.
+	existing, _ := s.ports.Plans.ListPlanVersions(ctx, planID)
 	pv := &domain.PlanVersion{
 		ID:            s.id(),
 		PlanID:        planID,
-		VersionNumber: 0, // repository may overwrite
+		VersionNumber: domain.NextVersionNumber(existing),
 		CycleDays:     newCycleDays,
+		TemplateID:    before.TemplateID,
 		ChangedBy:     actor.ID,
 		ChangedAt:     s.now(),
 		Reason:        reason,
 	}
-	existing, _ := s.ports.Plans.ListPlanVersions(ctx, planID)
-	domain.RewriteHistoricalVersions(existing, newCycleDays)
-	pv.VersionNumber = len(existing) + 1
 	_ = s.ports.Plans.AppendPlanVersion(ctx, pv)
 	_ = s.audit(ctx, domain.AuditUpdate, "MaintenancePlan", planID, actor, before, &updated, reason)
 	_ = s.timeline(ctx, before.FacilityID, "cycle_changed", "周期调整", actor.Name, map[string]any{

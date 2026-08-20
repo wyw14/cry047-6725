@@ -226,17 +226,25 @@ func (r *PlanRepository) ListDuePlans(ctx context.Context, before time.Time) ([]
 
 // --- Plan Versions ---
 
+// AppendPlanVersion records a new immutable snapshot of the plan's cycle. It is
+// strictly append-only: existing snapshots are never rewritten, so the history
+// keeps the cycle that was in effect at each point in time. When the caller
+// leaves VersionNumber unset (0) the next sequential number is assigned based
+// on the existing history for the plan.
 func (r *PlanRepository) AppendPlanVersion(ctx context.Context, v *domain.PlanVersion) error {
 	r.store.mu.Lock()
 	defer r.store.mu.Unlock()
 	if v.ChangedAt.IsZero() {
 		v.ChangedAt = now()
 	}
-	for idx := range r.store.planVersions {
-		if r.store.planVersions[idx].PlanID == v.PlanID {
-			r.store.planVersions[idx].CycleDays = v.CycleDays
-			r.store.planVersions[idx].TemplateID = v.TemplateID
+	if v.VersionNumber == 0 {
+		max := 0
+		for i := range r.store.planVersions {
+			if r.store.planVersions[i].PlanID == v.PlanID && r.store.planVersions[i].VersionNumber > max {
+				max = r.store.planVersions[i].VersionNumber
+			}
 		}
+		v.VersionNumber = max + 1
 	}
 	r.store.planVersions = append(r.store.planVersions, *v)
 	return nil

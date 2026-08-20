@@ -244,9 +244,15 @@ curl -X POST http://localhost:8080/api/v1/scheduler/scan -H "X-Actor-Role: admin
 
 ### 计划周期变更
 
-**更换周期只影响后续计划，不能篡改已完成记录**：
+**更换周期只影响后续计划，不能篡改已完成记录与历史**：
 `PlanService.ChangeCycle` 只更新 `MaintenancePlan.CurrentCycleDays` / `NextDueDate`，
-**从不修改任何 `Execution` 记录**。校验在 `application/plan_service.go` 与对应单元测试中。
+**从不修改任何 `Execution` 记录**，也**绝不改写已有的 `PlanVersion` 快照**——
+新周期以一条新的、不可变的 `PlanVersion` 快照追加记录（`AppendPlanVersion` 是纯追加）。
+因此审计/版本历史始终保留"当时实际使用的周期"：调用
+`domain.EffectiveCycleAt(versions, t)` 即可按时间点重建该时刻生效的周期。
+`ListPlanVersionsForAudit` 与 `GET /api/v1/plans/:id/versions` 均原样返回历史快照，
+不再用最新周期覆盖旧记录。校验在 `application/plan_service.go`、
+`application/audit_service.go` 与对应单元/集成测试中。
 
 ### 幂等键
 

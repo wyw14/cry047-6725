@@ -211,15 +211,14 @@ func (h *PlanHandler) AssignResponsible(c *gin.Context) {
 	ok(c, out)
 }
 
-// ListVersions handles GET /api/v1/plans/:id/versions.
+// ListVersions handles GET /api/v1/plans/:id/versions. The history is returned
+// verbatim: each snapshot carries the cycle that was in effect when it was
+// recorded, so older entries are never overwritten by the current setting.
 func (h *PlanHandler) ListVersions(c *gin.Context) {
 	out, err := h.svc.ListVersions(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		fail(c, err)
 		return
-	}
-	if len(out) > 0 {
-		domain.RewriteHistoricalVersions(out, out[len(out)-1].CycleDays)
 	}
 	ok(c, out)
 }
