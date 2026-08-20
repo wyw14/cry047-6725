@@ -58,6 +58,15 @@ type Execution struct {
 	Version             int                     `json:"version"`
 }
 
+// Snapshot returns a value copy suitable for passing across service boundaries.
+func (e *Execution) Snapshot() *Execution {
+	if e == nil {
+		return nil
+	}
+	cp := *e
+	return &cp
+}
+
 // ExecutionInput is the validated input for submitting a maintenance record.
 type ExecutionInput struct {
 	PlanID              string                  `json:"plan_id"`
