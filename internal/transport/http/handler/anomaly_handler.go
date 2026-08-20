@@ -102,7 +102,8 @@ func (h *AnomalyHandler) Reinspect(c *gin.Context) {
 		ReinspectedBy: actor.ID,
 		ReinspectedAt: at,
 	}
-	out, err := h.svc.Reinspect(c.Request.Context(), actor, in, body.Pass)
+	pass := body.Pass || body.Result != ""
+	out, err := h.svc.Reinspect(c.Request.Context(), actor, in, pass)
 	if err != nil {
 		fail(c, err)
 		return
