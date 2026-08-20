@@ -155,10 +155,49 @@ func (t FacilityStatusTransition) ValidateTransition(criticality Criticality) er
 	return nil
 }
 
-// MaintenanceCompletionStatus selects the facility status after a preventive
-// maintenance execution is submitted.
+// MaintenanceCompletionStatus selects the facility status a facility should
+// move to after a preventive maintenance execution is submitted.
+//
+// The ordinary maintenance flow is unaffected: a facility that was merely
+// pending (or overdue but not business-critical) returns to Normal.
+//
+// An overdue CRITICAL facility is the exception. The state machine forbids
+// overdue->normal for critical facilities because the repair and recovery
+// steps must happen first — letting such a facility jump straight to Normal
+// would make it appear healthy while those steps are silently skipped. To keep
+// the steps on the critical path instead, the facility is routed into
+// UnderRepair, where rectification, reinspection and recovery confirmation are
+// tracked before it may return to Normal.
 func MaintenanceCompletionStatus(f *Facility) FacilityStatus {
+	if f == nil {
+		return FacilityNormal
+	}
+	if f.Status == FacilityOverdue && f.Criticality == CriticalityCritical {
+		return FacilityUnderRepair
+	}
 	return FacilityNormal
+}
+
+// MaintenanceCompletionTransition returns the status transition that Submit
+// should apply after a maintenance execution is recorded, plus whether that
+// transition is legal under the facility state machine. It pairs
+// MaintenanceCompletionStatus with ValidateTransition so the application layer
+// never bypasses the state machine: when ok is false the computed target would
+// be an illegal move and the caller must leave the facility's status untouched.
+func MaintenanceCompletionTransition(f *Facility) (FacilityStatusTransition, bool) {
+	if f == nil {
+		return FacilityStatusTransition{}, false
+	}
+	target := MaintenanceCompletionStatus(f)
+	t := FacilityStatusTransition{
+		From:   f.Status,
+		To:     target,
+		Reason: "maintenance_submitted",
+	}
+	if err := t.ValidateTransition(f.Criticality); err != nil {
+		return t, false
+	}
+	return t, true
 }
 
 // FacilityRepository is the persistence contract.

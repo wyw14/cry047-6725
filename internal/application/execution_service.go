@@ -96,15 +96,86 @@ func (s *ExecutionService) Submit(ctx context.Context, actor domain.Actor, in do
 		latest.Version = latest.Version + 1
 		_ = s.ports.Plans.UpdatePlan(ctx, latest)
 	}
-	// Mark facility as Normal after successful maintenance, unless an anomaly
-	// is currently open (which would keep it in restricted_use / under_repair).
-	if f.Status == domain.FacilityPendingMaintenance || f.Status == domain.FacilityOverdue {
-		target := domain.MaintenanceCompletionStatus(f)
-		_ = s.ports.Facilities.UpdateStatusChecked(ctx, f.ID, target, f.Version)
-	}
+	// Route the facility's status after maintenance. The ordinary flow — a
+	// pending or overdue non-critical facility returning to Normal — is
+	// unchanged. An overdue CRITICAL facility is the exception: the state
+	// machine forbids overdue->normal for critical facilities, so it is routed
+	// into UnderRepair to keep the repair and recovery steps on the critical
+	// path instead of silently skipping them. The transition is validated
+	// through the domain state machine before it is applied, so Submit can never
+	// land the facility in an illegal state.
+	s.routeAfterMaintenance(ctx, f, e, actor)
 	_ = s.audit(ctx, domain.AuditCreate, "Execution", e.ID, actor, nil, e, "")
 	_ = s.timeline(ctx, in.FacilityID, "execution_submitted", "提交保养执行记录", actor.Name, e)
 	return e, nil
+}
+
+// routeAfterMaintenance moves a facility to its post-maintenance status. Only
+// facilities that were pending maintenance or overdue are eligible — a facility
+// already under repair or in restricted use keeps its status (the anomaly flow
+// owns those transitions). The target status is computed by the domain and the
+// transition is validated against the state machine; an illegal target leaves
+// the facility's status untouched. When the facility is routed into UnderRepair
+// the responsible person is notified that repair work is now required.
+func (s *ExecutionService) routeAfterMaintenance(ctx context.Context, f *domain.Facility, e *domain.Execution, actor domain.Actor) {
+	if f.Status != domain.FacilityPendingMaintenance && f.Status != domain.FacilityOverdue {
+		return
+	}
+	transition, ok := domain.MaintenanceCompletionTransition(f)
+	if !ok {
+		// The computed target would violate the state machine (e.g. an overdue
+		// critical facility cannot jump to Normal). Leave the status untouched so
+		// the facility does not appear healthy while repair is still pending.
+		_ = s.timeline(ctx, f.ID, "maintenance_status_held", "保养后状态保持: 待维修恢复", actor.Name, map[string]any{
+			"execution_id":   e.ID,
+			"current_status": string(f.Status),
+			"criticality":    string(f.Criticality),
+		})
+		return
+	}
+	if err := s.ports.Facilities.UpdateStatusChecked(ctx, f.ID, transition.To, f.Version); err != nil {
+		// Optimistic-concurrency conflict (another writer moved the facility
+		// first). The execution record itself is already persisted, so we only
+		// log the failure rather than failing the whole submission.
+		_ = s.timeline(ctx, f.ID, "maintenance_status_conflict", "保养后状态更新冲突", actor.Name, map[string]any{
+			"execution_id":  e.ID,
+			"target_status": string(transition.To),
+		})
+		return
+	}
+	after := *f
+	after.Status = transition.To
+	_ = s.audit(ctx, domain.AuditStateChange, "Facility", f.ID, actor, f, &after, transition.Reason)
+	_ = s.timeline(ctx, f.ID, "maintenance_completed", "保养完成: "+string(f.Status)+" -> "+string(transition.To), actor.Name, map[string]any{
+		"execution_id":     e.ID,
+		"from_status":      string(f.Status),
+		"to_status":        string(transition.To),
+		"criticality":      string(f.Criticality),
+		"routed_to_repair": transition.To == domain.FacilityUnderRepair,
+	})
+	if transition.To == domain.FacilityUnderRepair {
+		s.notifyRepairRequired(ctx, f, e, actor)
+	}
+}
+
+// notifyRepairRequired alerts the responsible person that an overdue critical
+// facility has been routed into UnderRepair and must go through rectification,
+// reinspection and recovery confirmation before it may return to Normal.
+func (s *ExecutionService) notifyRepairRequired(ctx context.Context, f *domain.Facility, e *domain.Execution, actor domain.Actor) {
+	rp, err := s.ports.People.Get(ctx, f.ResponsiblePersonID)
+	if err != nil || rp == nil {
+		return
+	}
+	_ = s.notify(ctx, domain.NotificationInput{
+		UserID: rp.ID,
+		Type:   domain.NotificationAnomalyDiscovered,
+		Title:  "逾期关键设施需维修恢复",
+		Body:   "设施 " + f.Name + " 保养后仍需维修与恢复，请尽快安排整改与复检。",
+	})
+	_ = s.timeline(ctx, f.ID, "repair_required", "需维修恢复: 逾期关键设施", actor.Name, map[string]any{
+		"execution_id": e.ID,
+		"responsible":  rp.Name,
+	})
 }
 
 // Review approves or rejects an execution.
